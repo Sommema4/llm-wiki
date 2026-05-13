@@ -1,0 +1,31 @@
+# Web framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9       # multipart/form-data for file uploads
+
+# Settings & validation
+pydantic-settings>=2.0.0
+
+# Database
+sqlalchemy>=2.0.0
+
+# PDF extraction
+pymupdf>=1.24.0
+
+# LLM (OpenRouter is OpenAI-API-compatible)
+openai>=1.40.0
+
+# Local embeddings (ONNX-based, no PyTorch required)
+fastembed>=0.3.0
+
+# Auth
+# bcrypt>=4.1.0 removed __about__ which passlib relies on — pin to last compatible version
+passlib[bcrypt]>=1.7.4
+bcrypt==4.0.1
+python-jose[cryptography]>=3.3.0
+
+# Maths for cosine similarity
+numpy>=1.26.0
+
+# Graph algorithms
+networkx>=3.3

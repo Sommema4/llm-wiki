@@ -1,0 +1,20 @@
+# Environment / secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+*.egg-info/
+
+# Database & uploads (runtime data)
+backend/*.db
+backend/uploads/
+
+# Docker
+.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db

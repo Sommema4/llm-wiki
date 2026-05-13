@@ -1,0 +1,1299 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LLM Wiki</title>
+  <script src="https://unpkg.com/vis-network@9.1.9/dist/vis-network.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2a2d3a;
+      --accent: #6c8cff;
+      --accent-dim: #3a4a8a;
+      --danger: #e05555;
+      --success: #4caf7d;
+      --warn: #e0a855;
+      --text: #e0e2ef;
+      --muted: #737690;
+      --radius: 8px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* â”€â”€ Header â”€â”€ */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    header h1 { font-size: 1.15rem; font-weight: 600; letter-spacing: 0.02em; }
+    header h1 span { color: var(--accent); }
+    #lint-btn {
+      padding: 7px 18px;
+      background: var(--accent-dim);
+      color: var(--text);
+      border: 1px solid var(--accent);
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: background 0.15s;
+    }
+    #lint-btn:hover { background: var(--accent); }
+    #lint-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    #lint-status { font-size: 0.78rem; color: var(--muted); margin-left: 12px; }
+
+    /* â”€â”€ Layout â”€â”€ */
+    .layout {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* â”€â”€ Sidebar â”€â”€ */
+    aside {
+      width: 300px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .drop-zone {
+      margin: 16px;
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 24px 16px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      flex-shrink: 0;
+    }
+    .drop-zone.drag-over {
+      border-color: var(--accent);
+      background: #1e2340;
+      color: var(--text);
+    }
+    .drop-zone svg { display: block; margin: 0 auto 8px; opacity: 0.5; }
+    #file-input { display: none; }
+
+    .papers-header {
+      padding: 0 16px 8px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    #papers-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 8px 16px;
+    }
+    #papers-list:empty::after {
+      content: "No papers yet";
+      display: block;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.8rem;
+      padding: 24px 0;
+    }
+
+    .paper-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 10px 8px;
+      border-radius: var(--radius);
+      margin-bottom: 4px;
+      transition: background 0.1s;
+    }
+    .paper-item:hover { background: #22263a; }
+    .paper-info { flex: 1; min-width: 0; }
+    .paper-title {
+      font-size: 0.82rem;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.3;
+    }
+    .paper-meta {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .paper-status {
+      font-size: 0.68rem;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+    .status-processing { background: #2e2a1a; color: var(--warn); }
+    .status-ready      { background: #1a2e22; color: var(--success); }
+    .status-failed     { background: #2e1a1a; color: var(--danger); }
+
+    .del-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--muted);
+      padding: 2px;
+      flex-shrink: 0;
+      border-radius: 4px;
+      transition: color 0.1s;
+      line-height: 1;
+    }
+    .del-btn:hover { color: var(--danger); }
+    .retry-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--muted);
+      padding: 2px;
+      flex-shrink: 0;
+      border-radius: 4px;
+      transition: color 0.1s;
+      line-height: 1;
+      font-size: 0.8rem;
+    }
+    .retry-btn:hover { color: #f59e0b; }
+
+    /* â”€â”€ Main area â”€â”€ */
+    main { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+
+    /* â”€â”€ Chat â”€â”€ */
+    #chat-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    #messages:empty::after {
+      content: "Ask a question about your papers...";
+      color: var(--muted);
+      font-size: 0.9rem;
+      text-align: center;
+      margin-top: 80px;
+    }
+
+    .msg { display: flex; gap: 12px; max-width: 820px; }
+    .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+    .msg.assistant { align-self: flex-start; }
+
+    .msg-avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      font-size: 0.75rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 2px;
+    }
+    .msg.user .msg-avatar    { background: var(--accent-dim); color: var(--accent); }
+    .msg.assistant .msg-avatar { background: #2a3a2a; color: var(--success); }
+
+    .msg-body { display: flex; flex-direction: column; gap: 6px; }
+
+    .msg-bubble {
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 0.875rem;
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+    .msg.user .msg-bubble {
+      background: var(--accent-dim);
+      border-bottom-right-radius: 3px;
+    }
+    .msg.assistant .msg-bubble {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 3px;
+    }
+
+    .msg-sources {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding-left: 4px;
+    }
+    .source-tag {
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      background: #1e2130;
+    }
+    .source-tag.paper   { border-color: var(--accent-dim); color: var(--accent); }
+    .source-tag.concept { border-color: #3a4a2a; color: #8ac47a; }
+
+    .thinking {
+      display: flex;
+      gap: 5px;
+      padding: 14px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      border-bottom-left-radius: 3px;
+    }
+    .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--muted);
+      animation: bounce 1.2s infinite;
+    }
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes bounce {
+      0%, 80%, 100% { transform: translateY(0); }
+      40%           { transform: translateY(-6px); }
+    }
+
+    /* â”€â”€ Input bar â”€â”€ */
+    .input-bar {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    #question-input {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      padding: 10px 14px;
+      font-size: 0.875rem;
+      resize: none;
+      height: 44px;
+      max-height: 140px;
+      overflow-y: auto;
+      font-family: inherit;
+      transition: border-color 0.15s;
+    }
+    #question-input:focus { outline: none; border-color: var(--accent); }
+    #send-btn {
+      background: var(--accent);
+      border: none;
+      border-radius: var(--radius);
+      color: #fff;
+      width: 44px;
+      height: 44px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: opacity 0.15s;
+    }
+    #send-btn:hover  { opacity: 0.85; }
+    #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* â”€â”€ Lint report panel â”€â”€ */
+    #lint-panel {
+      display: none;
+      position: fixed;
+      top: 60px; right: 24px;
+      width: 340px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      z-index: 100;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+    #lint-panel.open { display: block; }
+    #lint-panel h3 { font-size: 0.85rem; margin-bottom: 12px; }
+    #lint-panel .close-btn {
+      float: right; background: none; border: none;
+      color: var(--muted); cursor: pointer; font-size: 1rem;
+    }
+    .lint-row { display: flex; justify-content: space-between; font-size: 0.8rem; padding: 5px 0; border-bottom: 1px solid var(--border); }
+    .lint-row:last-child { border-bottom: none; }
+    .lint-row .val { font-weight: 600; color: var(--accent); }
+
+    /* â”€â”€ Tabs â”€â”€ */
+    .tabs { display: flex; gap: 4px; }
+    .tab-btn {
+      padding: 6px 16px;
+      background: none;
+      border: 1px solid transparent;
+      border-radius: var(--radius);
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 0.82rem;
+      transition: all 0.15s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { background: var(--accent-dim); border-color: var(--accent); color: var(--text); }
+
+    /* â”€â”€ Graph panel â”€â”€ */
+    #graph-panel {
+      display: none;
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: var(--bg);
+      overflow: hidden;
+    }
+    #graph-panel.active { display: block; }
+    #graph-canvas {
+      position: absolute;
+      top: 45px; left: 0; right: 0; bottom: 0;
+    }
+
+    #graph-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    #graph-toolbar button {
+      padding: 4px 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 0.78rem;
+    }
+    #graph-toolbar button:hover { border-color: var(--accent); }
+    .legend { display: flex; gap: 14px; margin-left: auto; }
+    .legend-item { display: flex; align-items: center; gap: 5px; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+    /* â”€â”€ Node detail tooltip â”€â”€ */
+    #node-detail {
+      display: none;
+      position: absolute;
+      bottom: 20px; right: 20px;
+      width: 300px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      z-index: 10;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    }
+    #node-detail.open { display: block; }
+    #node-detail h4 { font-size: 0.88rem; margin-bottom: 6px; }
+    #node-detail .nd-type {
+      font-size: 0.68rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--muted); margin-bottom: 8px;
+    }
+    #node-detail .nd-close {
+      float: right; background: none; border: none;
+      color: var(--muted); cursor: pointer; font-size: 0.9rem;
+    }
+
+    /* â”€â”€ Chat panel â”€â”€ */
+    #chat-panel { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+    #chat-panel.active { display: flex; }
+
+    /* â”€â”€ Auth & KB overlays â”€â”€ */
+    .overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    .overlay-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 32px 36px;
+      width: 360px;
+      max-width: 90vw;
+    }
+    .overlay-box h2 { font-size: 1.1rem; margin-bottom: 20px; }
+    .form-group { margin-bottom: 14px; }
+    .form-group label { display: block; font-size: 0.78rem; color: var(--muted); margin-bottom: 5px; }
+    .form-group input {
+      width: 100%; padding: 9px 12px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: var(--radius); color: var(--text); font-size: 0.9rem;
+    }
+    .form-group input:focus { outline: none; border-color: var(--accent); }
+    .btn-primary {
+      width: 100%; padding: 10px; background: var(--accent);
+      color: #fff; border: none; border-radius: var(--radius);
+      font-size: 0.9rem; cursor: pointer; margin-top: 4px;
+    }
+    .btn-primary:hover { opacity: 0.88; }
+    .overlay-error { color: var(--danger); font-size: 0.8rem; min-height: 18px; margin-top: 6px; }
+    .overlay-link {
+      background: none; border: none; color: var(--accent);
+      font-size: 0.78rem; cursor: pointer; margin-top: 12px;
+      display: block; text-align: center; text-decoration: underline;
+    }
+    /* KB overlay */
+    .kb-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius);
+      margin-bottom: 8px; cursor: pointer; transition: border-color 0.15s;
+    }
+    .kb-item:hover { border-color: var(--accent); }
+    .kb-item.active { border-color: var(--accent); background: var(--accent-dim); }
+    .kb-name { font-size: 0.9rem; }
+    .kb-delete-btn {
+      background: none; border: none; color: var(--muted);
+      cursor: pointer; font-size: 0.85rem; padding: 2px 6px;
+    }
+    .kb-delete-btn:hover { color: var(--danger); }
+    #kb-list { max-height: 240px; overflow-y: auto; margin-bottom: 16px; }
+    #kb-create-form { display: flex; gap: 8px; }
+    #kb-name-input {
+      flex: 1; padding: 8px 10px; background: var(--bg);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      color: var(--text); font-size: 0.88rem;
+    }
+  </style>
+</head>
+<body>
+
+<!-- â”€â”€ Auth overlay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<div id="auth-overlay" class="overlay" style="display:flex">
+  <div class="overlay-box">
+    <h2 id="auth-title">Sign In</h2>
+    <form id="auth-form">
+      <div class="form-group">
+        <label>Username</label>
+        <input id="auth-username" type="text" autocomplete="username" required />
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input id="auth-password" type="password" autocomplete="current-password" required />
+      </div>
+      <div class="form-group" id="api-key-field" style="display:none">
+        <label>OpenRouter API Key <span style="color:var(--muted);font-size:0.75rem">(required to use LLM features)</span></label>
+        <input id="auth-api-key" type="password" placeholder="sk-or-v1-..." autocomplete="off" />
+        <div style="font-size:0.7rem;color:var(--muted);margin-top:3px">Get yours free at <a href="https://openrouter.ai/settings/keys" target="_blank" style="color:var(--accent)">openrouter.ai</a></div>
+      </div>
+      <div class="overlay-error" id="auth-error"></div>
+      <button type="submit" class="btn-primary" id="auth-submit-btn">Sign In</button>
+    </form>
+    <button class="overlay-link" id="auth-toggle" data-mode="login">No account? Register</button>
+  </div>
+</div>
+
+<!-- API key settings overlay -->
+<div id="apikey-overlay" class="overlay" style="display:none">
+  <div class="overlay-box" style="width:400px">
+    <h2>OpenRouter API Key</h2>
+    <p style="color:var(--muted);font-size:0.82rem;margin-bottom:12px">Your key is used for all LLM calls (ingestion, chat). It is stored on the server tied to your account and never shared.</p>
+    <form id="apikey-form">
+      <div class="form-group">
+        <label>API Key</label>
+        <input id="apikey-input" type="password" placeholder="sk-or-v1-..." autocomplete="off" />
+      </div>
+      <div class="overlay-error" id="apikey-error"></div>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button type="submit" class="btn-primary" style="flex:1">Save</button>
+        <button type="button" onclick="document.getElementById('apikey-overlay').style.display='none'" style="flex:1;background:none;border:1px solid var(--border);color:var(--text);border-radius:var(--radius);padding:10px;cursor:pointer">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- â”€â”€ KB selector overlay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<div id="kb-overlay" class="overlay">
+  <div class="overlay-box" style="width:420px">
+    <h2>Knowledge Bases</h2>
+    <div id="kb-list"></div>
+    <form id="kb-create-form">
+      <input id="kb-name-input" placeholder="New knowledge base name..." required />
+      <button type="submit" class="btn-primary" style="width:auto;padding:8px 16px;margin-top:0">Create</button>
+    </form>
+  </div>
+</div>
+
+<!-- â”€â”€ Main app â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<div id="app-root" style="display:none;flex-direction:column;height:100vh">
+
+<header>
+  <h1>LLM <span>Wiki</span></h1>
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="chat">Chat</button>
+    <button class="tab-btn" data-tab="graph">Graph</button>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <button id="kb-switch-btn" title="Switch knowledge base"
+      style="background:none;border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:5px 12px;cursor:pointer;font-size:0.8rem;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+      📚 <span id="active-kb-name">–</span>
+    </button>
+    <span id="header-username" style="font-size:0.78rem;color:var(--muted)"></span>
+    <button id="lint-btn">Run Lint</button>
+    <span id="lint-status"></span>
+    <button id="apikey-btn" title="Update OpenRouter API key" onclick="document.getElementById('apikey-overlay').style.display='flex'" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:0.78rem">API Key</button>
+    <button onclick="logout()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:0.78rem">Sign out</button>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- Sidebar -->
+  <aside>
+    <div class="drop-zone" id="drop-zone">
+      <svg width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path d="M12 16V4m0 0L8 8m4-4 4 4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"/>
+      </svg>
+      Drop PDF here<br>or <u>click to browse</u>
+    </div>
+    <input type="file" id="file-input" accept=".pdf" multiple />
+    <div class="papers-header">Papers</div>
+    <div id="papers-list"></div>
+  </aside>
+
+  <!-- Chat -->
+  <main>
+    <div id="chat-panel" class="active">
+      <div id="messages"></div>
+      <div class="input-bar">
+        <button id="clear-btn" title="Clear conversation" style="background:none;border:1px solid var(--border);border-radius:var(--radius);color:var(--muted);padding:0 12px;height:44px;cursor:pointer;font-size:0.78rem;flex-shrink:0;white-space:nowrap;">Clear</button>
+        <textarea id="question-input" placeholder="Ask a question about your papers..." rows="1"></textarea>
+        <button id="send-btn" title="Send">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path d="M22 2 11 13M22 2 15 22l-4-9-9-4 20-7z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div id="graph-panel">
+      <div id="graph-toolbar">
+        <button onclick="loadGraph()">↺ Refresh</button>
+        <span id="graph-stats"></span>
+        <div class="legend">
+          <div class="legend-item"><div class="legend-dot" style="background:#6c8cff"></div> Paper</div>
+          <div class="legend-item"><div class="legend-dot" style="background:#4caf7d"></div> Concept</div>
+        </div>
+      </div>
+      <div id="graph-canvas"></div>
+      <div id="node-detail">
+        <button class="nd-close" onclick="document.getElementById('node-detail').classList.remove('open')">✕</button>
+        <div class="nd-type" id="nd-type"></div>
+        <h4 id="nd-name"></h4>
+        <div id="nd-body"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Lint result panel -->
+<div id="lint-panel">
+  <button class="close-btn" onclick="closeLintPanel()">✕</button>
+  <h3>Lint Report</h3>
+  <div id="lint-report-body"></div>
+</div>
+
+</div><!-- #app-root -->
+
+<script>
+const API = "http://localhost:8000";
+const pollingIntervals = {};
+
+// â”€â”€ Auth state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+let authToken    = localStorage.getItem("llmwiki_token")    || null;
+let activeKbId   = localStorage.getItem("llmwiki_kb_id")    || null;
+let activeKbName = localStorage.getItem("llmwiki_kb_name")  || null;
+let currentUsername = localStorage.getItem("llmwiki_username") || null;
+
+function saveAuth(token, username) {
+  authToken = token;
+  currentUsername = username;
+  localStorage.setItem("llmwiki_token", token);
+  localStorage.setItem("llmwiki_username", username);
+}
+
+function setActiveKb(id, name) {
+  activeKbId = id;
+  activeKbName = name;
+  if (id) {
+    localStorage.setItem("llmwiki_kb_id", id);
+    localStorage.setItem("llmwiki_kb_name", name);
+  } else {
+    localStorage.removeItem("llmwiki_kb_id");
+    localStorage.removeItem("llmwiki_kb_name");
+  }
+}
+
+function logout() {
+  authToken = null; activeKbId = null; activeKbName = null; currentUsername = null;
+  localStorage.removeItem("llmwiki_token");
+  localStorage.removeItem("llmwiki_kb_id");
+  localStorage.removeItem("llmwiki_kb_name");
+  localStorage.removeItem("llmwiki_username");
+  showAuthScreen();
+}
+
+// â”€â”€ API helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+async function apiFetch(path, opts = {}) {
+  const headers = { ...(opts.headers || {}) };
+  if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
+  if (opts.body && !(opts.body instanceof FormData)) {
+    headers["Content-Type"] = "application/json";
+  }
+  const res = await fetch(API + path, { ...opts, headers });
+  if (res.status === 401) { logout(); throw new Error("Unauthorized"); }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || res.statusText);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+// â”€â”€ Auth screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function showAuthScreen() {
+  document.getElementById("auth-overlay").style.display = "flex";
+  document.getElementById("app-root").style.display    = "none";
+}
+function hideAuthScreen() {
+  document.getElementById("auth-overlay").style.display = "none";
+  document.getElementById("app-root").style.display    = "flex";
+}
+
+document.getElementById("auth-toggle").addEventListener("click", () => {
+  const isLogin = document.getElementById("auth-toggle").dataset.mode === "login";
+  document.getElementById("auth-title").textContent       = isLogin ? "Register" : "Sign In";
+  document.getElementById("auth-submit-btn").textContent  = isLogin ? "Register" : "Sign In";
+  document.getElementById("auth-toggle").textContent      = isLogin ? "Already have an account? Sign in" : "No account? Register";
+  document.getElementById("auth-toggle").dataset.mode     = isLogin ? "register" : "login";
+  document.getElementById("api-key-field").style.display  = isLogin ? "block" : "none";
+  document.getElementById("auth-error").textContent = "";
+});
+
+document.getElementById("auth-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const errEl = document.getElementById("auth-error");
+  errEl.textContent = "";
+  const mode     = document.getElementById("auth-submit-btn").textContent === "Sign In" ? "login" : "register";
+  const username = document.getElementById("auth-username").value.trim();
+  const password = document.getElementById("auth-password").value;
+  const apiKey   = document.getElementById("auth-api-key").value.trim();
+  try {
+    let result;
+    if (mode === "register") {
+      result = await apiFetch("/auth/register", {
+        method: "POST",
+        body: JSON.stringify({ username, password, openrouter_api_key: apiKey }),
+      });
+    } else {
+      // OAuth2PasswordRequestForm requires form-encoded body
+      const fd = new URLSearchParams();
+      fd.append("username", username);
+      fd.append("password", password);
+      result = await fetch(API + "/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: fd.toString(),
+      });
+      if (!result.ok) {
+        const err = await result.json().catch(() => ({ detail: "Login failed" }));
+        throw new Error(err.detail);
+      }
+      result = await result.json();
+    }
+    saveAuth(result.access_token, result.username);
+    await initApp();
+  } catch(err) {
+    errEl.textContent = err.message;
+  }
+});
+
+// â”€â”€ KB selector screen â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function showKbScreen() {
+  document.getElementById("kb-overlay").style.display = "flex";
+  document.getElementById("app-root").style.display    = "none";
+  loadKbList();
+}
+function hideKbScreen() {
+  document.getElementById("kb-overlay").style.display = "none";
+  document.getElementById("app-root").style.display    = "flex";
+}
+
+async function loadKbList() {
+  const list = document.getElementById("kb-list");
+  list.innerHTML = "<div style='color:var(--muted);font-size:0.85rem'>Loading...</div>";
+  try {
+    const kbs = await apiFetch("/kbs/");
+    list.innerHTML = "";
+    if (!kbs.length) {
+      list.innerHTML = "<div style='color:var(--muted);font-size:0.85rem'>No knowledge bases yet - create one below.</div>";
+    }
+    kbs.forEach(kb => {
+      const el = document.createElement("div");
+      el.className = "kb-item" + (kb.id === activeKbId ? " active" : "");
+      el.innerHTML = `
+        <span class="kb-name">${escHtml(kb.name)}</span>
+        <button class="kb-delete-btn" title="Delete" onclick="deleteKb('${kb.id}', event)">✕</button>
+      `;
+      el.addEventListener("click", () => selectKb(kb.id, kb.name));
+      list.appendChild(el);
+    });
+  } catch(e) {
+    list.innerHTML = `<div style='color:var(--danger)'>${escHtml(e.message)}</div>`;
+  }
+}
+
+async function deleteKb(id, e) {
+  e.stopPropagation();
+  if (!confirm("Delete this knowledge base and all its papers?")) return;
+  try {
+    await apiFetch(`/kbs/${id}`, { method: "DELETE" });
+    if (activeKbId === id) setActiveKb(null, null);
+    loadKbList();
+  } catch(err) {
+    alert(err.message);
+  }
+}
+
+document.getElementById("kb-switch-btn").addEventListener("click", showKbScreen);
+
+document.getElementById("kb-create-form").addEventListener("submit", async e => {  e.preventDefault();
+  const inp = document.getElementById("kb-name-input");
+  const name = inp.value.trim();
+  if (!name) return;
+  try {
+    const kb = await apiFetch("/kbs/", { method: "POST", body: JSON.stringify({ name }) });
+    inp.value = "";
+    selectKb(kb.id, kb.name);
+  } catch(err) {
+    alert(err.message);
+  }
+});
+
+function selectKb(id, name) {
+  setActiveKb(id, name);
+  document.getElementById("active-kb-name").textContent = name;
+  hideKbScreen();
+  loadPapers();
+  conversationHistory = [];
+  document.getElementById("messages").innerHTML = "";
+}
+
+// â”€â”€ Papers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+async function loadPapers() {
+  if (!activeKbId) return;
+  try {
+    const papers = await apiFetch(`/kbs/${activeKbId}/papers/`);
+    renderPapers(papers);
+    papers.filter(p => p.status === "processing").forEach(p => startPolling(p.id));
+  } catch(e) { /* server not yet up */ }
+}
+
+function renderPapers(papers) {
+  const list = document.getElementById("papers-list");
+  list.innerHTML = "";
+  papers.forEach(p => list.appendChild(makePaperEl(p)));
+}
+
+function makePaperEl(paper) {
+  const el = document.createElement("div");
+  el.className = "paper-item";
+  el.id = `paper-${paper.id}`;
+
+  const title = paper.title || "Processing...";
+  const meta  = [paper.year, paper.venue].filter(Boolean).join(" · ") || "-";
+  const stClass = `paper-status status-${paper.status}`;
+  const stLabel  = paper.status === "processing" ? "processing"
+                 : paper.status === "ready"       ? "✓ ready"
+                 : "✗ failed";
+
+  let pageBadge = "";
+  if (paper.pages_total != null && paper.pages_extracted != null) {
+    if (paper.pages_extracted < paper.pages_total) {
+      pageBadge = ` <span title="Only ${paper.pages_extracted} of ${paper.pages_total} pages were parsed (char limit reached)" style="color:#f59e0b;font-size:0.68rem;cursor:help">⚠ ${paper.pages_extracted}/${paper.pages_total}p</span>`;
+    } else {
+      pageBadge = ` <span title="All ${paper.pages_total} pages parsed" style="color:var(--muted);font-size:0.68rem">${paper.pages_total}p</span>`;
+    }
+  }
+
+  el.innerHTML = `
+    <div class="paper-info">
+      <div class="paper-title" title="${escHtml(title)}">${escHtml(title)}</div>
+      <div class="paper-meta">${escHtml(meta)}${pageBadge}</div>
+    </div>
+    <span class="${stClass}">${stLabel}</span>
+    ${paper.status === 'failed' ? `<button class="retry-btn" title="Retry ingestion" onclick="reingestPaper('${paper.id}')">↺</button>` : ''}
+    <button class="del-btn" title="Delete" onclick="deletePaper('${paper.id}')">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>
+      </svg>
+    </button>`;
+  return el;
+}
+
+function updatePaperEl(paper) {
+  const el = document.getElementById(`paper-${paper.id}`);
+  if (el) el.replaceWith(makePaperEl(paper));
+}
+
+function startPolling(paperId) {
+  if (pollingIntervals[paperId]) return;
+  pollingIntervals[paperId] = setInterval(async () => {
+    try {
+      const paper = await apiFetch(`/kbs/${activeKbId}/papers/${paperId}`);
+      updatePaperEl(paper);
+      if (paper.status !== "processing") {
+        clearInterval(pollingIntervals[paperId]);
+        delete pollingIntervals[paperId];
+      }
+    } catch(e) {
+      clearInterval(pollingIntervals[paperId]);
+      delete pollingIntervals[paperId];
+    }
+  }, 4000);
+}
+
+async function uploadFile(file) {
+  if (!file.name.toLowerCase().endsWith(".pdf")) {
+    alert("Only PDF files are supported.");
+    return;
+  }
+  const fd = new FormData();
+  fd.append("file", file);
+  try {
+    const paper = await apiFetch(`/kbs/${activeKbId}/papers/upload`, { method: "POST", body: fd });
+    const list = document.getElementById("papers-list");
+    list.prepend(makePaperEl(paper));
+    startPolling(paper.id);
+  } catch(e) {
+    alert("Upload failed: " + e.message);
+  }
+}
+
+async function deletePaper(paperId) {
+  if (!confirm("Delete this paper from the wiki?")) return;
+  try {
+    await apiFetch(`/kbs/${activeKbId}/papers/${paperId}`, { method: "DELETE" });
+    document.getElementById(`paper-${paperId}`)?.remove();
+  } catch(e) {
+    alert("Delete failed: " + e.message);
+  }
+}
+
+async function reingestPaper(paperId) {
+  try {
+    const paper = await apiFetch(`/kbs/${activeKbId}/papers/${paperId}/reingest`, { method: "POST" });
+    updatePaperEl(paper);
+    startPolling(paperId);
+  } catch(e) {
+    alert("Retry failed: " + e.message);
+  }
+}
+
+document.getElementById("apikey-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const errEl = document.getElementById("apikey-error");
+  errEl.textContent = "";
+  const key = document.getElementById("apikey-input").value.trim();
+  try {
+    await apiFetch("/auth/api-key", {
+      method: "PUT",
+      body: JSON.stringify({ openrouter_api_key: key }),
+    });
+    document.getElementById("apikey-overlay").style.display = "none";
+    document.getElementById("apikey-input").value = "";
+    document.getElementById("apikey-btn").style.color = key ? "var(--success)" : "var(--muted)";
+  } catch(err) {
+    errEl.textContent = err.message;
+  }
+});
+
+// â”€â”€ Drag-drop / file input â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+const dropZone  = document.getElementById("drop-zone");
+const fileInput = document.getElementById("file-input");
+
+dropZone.addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", () => {
+  [...fileInput.files].forEach(uploadFile);
+  fileInput.value = "";
+});
+dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("drag-over"); });
+dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+dropZone.addEventListener("drop", e => {
+  e.preventDefault();
+  dropZone.classList.remove("drag-over");
+  [...e.dataTransfer.files].forEach(uploadFile);
+});
+
+// â”€â”€ Lint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+document.getElementById("lint-btn").addEventListener("click", async () => {
+  if (!activeKbId) return;
+  const btn = document.getElementById("lint-btn");
+  const statusEl = document.getElementById("lint-status");
+  btn.disabled = true;
+  statusEl.textContent = "Running...";
+  try {
+    const report = await apiFetch(`/kbs/${activeKbId}/lint/run`, { method: "POST" });
+    statusEl.textContent = "Polling...";
+    pollLint(report.id, btn, statusEl);
+  } catch(e) {
+    statusEl.textContent = "Failed";
+    btn.disabled = false;
+  }
+});
+
+async function pollLint(reportId, btn, statusEl) {
+  const interval = setInterval(async () => {
+    try {
+      const r = await apiFetch(`/kbs/${activeKbId}/lint/status/${reportId}`);
+      if (r.status === "completed") {
+        clearInterval(interval);
+        btn.disabled = false;
+        statusEl.textContent = "Done ✓";
+        showLintPanel(r.report);
+        setTimeout(() => { statusEl.textContent = ""; }, 5000);
+      } else if (r.status === "failed") {
+        clearInterval(interval);
+        btn.disabled = false;
+        statusEl.textContent = "Lint failed";
+      }
+    } catch(e) {
+      clearInterval(interval);
+      btn.disabled = false;
+    }
+  }, 3000);
+}
+
+function showLintPanel(report) {
+  const s = report.summary || {};
+  const body = document.getElementById("lint-report-body");
+  body.innerHTML = `
+    <div class="lint-row"><span>Merges</span><span class="val">${s.merges ?? 0}</span></div>
+    <div class="lint-row"><span>Orphans flagged</span><span class="val">${s.orphans_flagged ?? 0}</span></div>
+    <div class="lint-row"><span>New edges discovered</span><span class="val">${s.new_edges ?? 0}</span></div>
+    <div class="lint-row"><span>Quality flags</span><span class="val">${s.quality_flags ?? 0}</span></div>
+    <div class="lint-row"><span>Clusters</span><span class="val">${s.clusters ?? 0}</span></div>
+  `;
+  document.getElementById("lint-panel").classList.add("open");
+}
+
+function closeLintPanel() {
+  document.getElementById("lint-panel").classList.remove("open");
+}
+
+// â”€â”€ Chat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+const messagesEl = document.getElementById("messages");
+const inputEl    = document.getElementById("question-input");
+const sendBtn    = document.getElementById("send-btn");
+const clearBtn   = document.getElementById("clear-btn");
+
+let conversationHistory = [];  // [{role, content}, ...]
+
+clearBtn.addEventListener("click", () => {
+  conversationHistory = [];
+  messagesEl.innerHTML = "";
+});
+
+inputEl.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendQuestion(); }
+});
+sendBtn.addEventListener("click", sendQuestion);
+
+// Auto-resize textarea
+inputEl.addEventListener("input", () => {
+  inputEl.style.height = "44px";
+  inputEl.style.height = Math.min(inputEl.scrollHeight, 140) + "px";
+});
+
+async function sendQuestion() {
+  const q = inputEl.value.trim();
+  if (!q || !activeKbId) return;
+
+  inputEl.value = "";
+  inputEl.style.height = "44px";
+  sendBtn.disabled = true;
+
+  appendMessage("user", q);
+  const thinkingEl = appendThinking();
+
+  try {
+    const result = await apiFetch(`/kbs/${activeKbId}/search/query`, {
+      method: "POST",
+      body: JSON.stringify({
+        question: q,
+        top_k: 5,
+        history: conversationHistory.slice(-6),
+      }),
+    });
+    thinkingEl.remove();
+    appendMessage("assistant", result.answer, result.sources || []);
+
+    conversationHistory.push({ role: "user",      content: q             });
+    conversationHistory.push({ role: "assistant", content: result.answer });
+  } catch(e) {
+    thinkingEl.remove();
+    appendMessage("assistant", "Error: " + e.message, []);
+  } finally {
+    sendBtn.disabled = false;
+    inputEl.focus();
+  }
+}
+
+function appendMessage(role, text, sources) {
+  const wrap = document.createElement("div");
+  wrap.className = `msg ${role}`;
+
+  const avatar = document.createElement("div");
+  avatar.className = "msg-avatar";
+  avatar.textContent = role === "user" ? "You" : "AI";
+
+  const body = document.createElement("div");
+  body.className = "msg-body";
+
+  const bubble = document.createElement("div");
+  bubble.className = "msg-bubble";
+  bubble.textContent = text;
+  body.appendChild(bubble);
+
+  if (sources && sources.length) {
+    const tags = document.createElement("div");
+    tags.className = "msg-sources";
+    sources.forEach(s => {
+      const tag = document.createElement("span");
+      tag.className = `source-tag source-${s.type}`;
+      tag.textContent = s.name;
+      tags.appendChild(tag);
+    });
+    body.appendChild(tags);
+  }
+
+  if (role === "user") { wrap.appendChild(body); wrap.appendChild(avatar); }
+  else { wrap.appendChild(avatar); wrap.appendChild(body); }
+
+  messagesEl.appendChild(wrap);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return wrap;
+}
+
+function appendThinking() {
+  const wrap = document.createElement("div");
+  wrap.className = "msg assistant";
+  wrap.innerHTML = `
+    <div class="msg-avatar">AI</div>
+    <div class="msg-body"><div class="msg-bubble thinking"><span></span><span></span><span></span></div></div>
+  `;
+  messagesEl.appendChild(wrap);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+  return wrap;
+}
+
+// â”€â”€ Tabs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const tab = btn.dataset.tab;
+    document.getElementById('chat-panel').classList.toggle('active', tab === 'chat');
+    document.getElementById('graph-panel').classList.toggle('active', tab === 'graph');
+    if (tab === 'graph') loadGraph();
+  });
+});
+
+// â”€â”€ Graph â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+let visNetwork = null;
+
+const CLUSTER_PALETTE = [
+  '#6c8cff','#4caf7d','#e0a855','#e05555','#c97be0',
+  '#5bc4e0','#e07b3a','#a0c45a','#e06caa','#60c0b0',
+];
+
+async function loadGraph() {
+  if (!activeKbId) return;
+  const statsEl = document.getElementById('graph-stats');
+  statsEl.textContent = 'Loading...';
+
+  if (typeof vis === 'undefined') {
+    statsEl.textContent = 'Error: vis-network library not loaded.';
+    return;
+  }
+
+  let g;
+  try {
+    g = await apiFetch(`/kbs/${activeKbId}/graph/`);
+  } catch(e) {
+    statsEl.textContent = 'API error: ' + e.message;
+    return;
+  }
+
+  if (!g || !g.nodes) { statsEl.textContent = 'No data returned from server.'; return; }
+
+  const clusterMap = {};
+  (g.clusters || []).forEach((cl, i) => {
+    (cl.node_ids || []).forEach(id => { clusterMap[id] = i; });
+  });
+
+  const nodes = (g.nodes || []).map(n => {
+    const clusterIdx = clusterMap[n.id] ?? -1;
+    const baseColor  = n.type === 'paper' ? '#6c8cff' : '#4caf7d';
+    const color = clusterIdx >= 0
+      ? CLUSTER_PALETTE[clusterIdx % CLUSTER_PALETTE.length]
+      : baseColor;
+    return {
+      id: n.id,
+      label: n.name && n.name.length > 28 ? n.name.slice(0, 26) + '...' : (n.name || '?'),
+      title: n.name,
+      shape: n.type === 'paper' ? 'box' : 'ellipse',
+      color: { background: color + '33', border: color, highlight: { background: color + '66', border: color } },
+      font: { color: '#e0e2ef', size: n.type === 'paper' ? 13 : 11 },
+      borderWidth: n.type === 'paper' ? 2 : 1.5,
+      size: n.type === 'paper' ? 22 : 14,
+      _data: n,
+    };
+  });
+
+  const edges = (g.edges || []).map(e => ({
+    id: e.id,
+    from: e.source,
+    to: e.target,
+    label: e.relation || '',
+    title: e.label || e.relation || '',
+    color: { color: '#2a2d3a', highlight: '#6c8cff', opacity: 0.8 },
+    font: { color: '#737690', size: 9, align: 'middle' },
+    smooth: { type: 'dynamic' },
+    arrows: { to: { enabled: true, scaleFactor: 0.5 } },
+  }));
+
+  statsEl.textContent = `${nodes.filter(n=>n._data.type==='paper').length} papers · ${nodes.filter(n=>n._data.type==='concept').length} concepts · ${edges.length} edges · ${(g.clusters||[]).length} clusters`;
+
+  const container = document.getElementById('graph-canvas');
+  const visData = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
+  const options = {
+    physics: {
+      solver: 'barnesHut',
+      barnesHut: { gravitationalConstant: -8000, springLength: 100, springConstant: 0.04, damping: 0.5 },
+      stabilization: { iterations: 60, updateInterval: 50 },
+    },
+    interaction: { hover: true, tooltipDelay: 150, zoomView: true, dragView: true },
+    layout: { improvedLayout: false },
+  };
+
+  if (visNetwork) { visNetwork.destroy(); visNetwork = null; }
+
+  requestAnimationFrame(() => {
+    try {
+      visNetwork = new vis.Network(container, visData, options);
+      visNetwork.once('stabilized', () => {
+        visNetwork.setOptions({ physics: { enabled: false } });
+      });
+      visNetwork.on('click', params => {
+        if (!params.nodes.length) return;
+        const node = nodes.find(n => n.id === params.nodes[0]);
+        if (!node) return;
+        const d = node._data;
+        document.getElementById('nd-type').textContent = d.type.toUpperCase();
+        document.getElementById('nd-name').textContent = d.name || '-';
+        let body = '';
+        if (d.type === 'paper') {
+          if (d.summary)  body += `<p style="margin-bottom:6px">${escHtml(d.summary)}</p>`;
+          if (d.year || d.venue) body += `<p style="color:var(--muted);font-size:0.72rem">${escHtml([d.year, d.venue].filter(Boolean).join(' · '))}</p>`;
+          if (d.pages_total != null && d.pages_extracted != null) {
+            const truncated = d.pages_extracted < d.pages_total;
+            const pageColor = truncated ? '#f59e0b' : 'var(--muted)';
+            const pageText = truncated
+              ? `⚠ ${d.pages_extracted} of ${d.pages_total} pages parsed (truncated)`
+              : `${d.pages_total} pages — fully parsed`;
+            body += `<p style="color:${pageColor};font-size:0.72rem;margin-top:4px">${pageText}</p>`;
+          }
+        } else {
+          body = `<p>${escHtml(d.definition || '-')}</p>`;
+        }
+        document.getElementById('nd-body').innerHTML = body;
+        document.getElementById('node-detail').classList.add('open');
+      });
+    } catch(e) {
+      statsEl.textContent = 'Render error: ' + e.message;
+    }
+  });
+}
+
+// â”€â”€ Utilities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+function escHtml(s) {
+  return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+// â”€â”€ Init â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+async function initApp() {
+  if (!authToken) { showAuthScreen(); return; }
+
+  // Verify token is still valid and get key status
+  let meData;
+  try {
+    meData = await apiFetch("/auth/me");
+  } catch(e) {
+    showAuthScreen();
+    return;
+  }
+
+  document.getElementById("header-username").textContent = currentUsername || "";
+  document.getElementById("apikey-btn").style.color = meData.has_api_key ? "var(--success)" : "#f59e0b";
+
+  // If we have a saved KB, go straight to app; otherwise show KB selector
+  if (activeKbId && activeKbName) {
+    document.getElementById("active-kb-name").textContent = activeKbName;
+    hideAuthScreen();
+    hideKbScreen();
+    loadPapers();
+  } else {
+    hideAuthScreen();
+    showKbScreen();
+  }
+}
+
+initApp();
+</script>
+</body>
+</html>
