@@ -2,8 +2,6 @@
 
 A personal knowledge base for scientific papers. Upload PDFs, let an LLM extract structured metadata, concepts, and relations, then explore everything as an interactive knowledge graph and ask questions across your whole library using semantic search.
 
-Inspired by Andrej Karpathy's idea of building tools to help researchers navigate the ever-growing landscape of literature — see his [arxiv-sanity](https://github.com/karpathy/arxiv-sanity-preserver) and his talks on the importance of understanding foundational concepts deeply.
-
 ---
 
 ## What it does
