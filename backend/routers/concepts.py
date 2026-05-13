@@ -66,6 +66,9 @@ def get_concept(
     return {
         "id": concept.id,
         "name": concept.name,
+        "concept_type": concept.concept_type,
+        "summary": concept.summary,
+        "explanation": concept.explanation,
         "definition": concept.definition,
         "created_at": concept.created_at,
         "updated_at": concept.updated_at,

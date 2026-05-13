@@ -48,6 +48,8 @@ def get_graph(
                 "id": c.id,
                 "type": "concept",
                 "name": c.name,
+                "concept_type": c.concept_type,
+                "summary": c.summary,
                 "definition": c.definition,
             }
         )

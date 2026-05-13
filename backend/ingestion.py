@@ -67,24 +67,29 @@ async def ingest_paper(paper_id: str, file_path: str, kb_id: str, api_key: str |
         for concept_data in metadata.get("concepts_used") or []:
             cname = (concept_data.get("name") or "").strip().lower()
             cdefinition = (concept_data.get("definition") or "").strip()
+            csummary = (concept_data.get("summary") or "").strip()
+            cexplanation = (concept_data.get("explanation") or "").strip()
+            ctype = (concept_data.get("concept_type") or "METHOD").strip().upper()
 
             if not cname:
                 continue
 
             if cname in concept_name_map:
-                # Enrich the existing definition
+                # Enrich the existing node with all three levels
                 existing = concept_name_map[cname]
                 try:
                     enriched = await enrich_concept_definition(
                         cname,
-                        existing.definition,
+                        existing.definition or "",
                         paper.title,
                         text[:8000],
                         api_key=api_key,
                         base_url=base_url,
                         model=default_model,
                     )
-                    existing.definition = enriched
+                    existing.summary = enriched["summary"] or existing.summary
+                    existing.explanation = enriched["explanation"] or existing.explanation
+                    existing.definition = enriched["definition"] or existing.definition
                     existing.updated_at = datetime.datetime.utcnow()
                 except Exception as exc:
                     logger.warning("Could not enrich concept '%s': %s", cname, exc)
@@ -95,7 +100,10 @@ async def ingest_paper(paper_id: str, file_path: str, kb_id: str, api_key: str |
                     id=str(uuid.uuid4()),
                     kb_id=kb_id,
                     name=cname,
-                    definition=cdefinition or f"A concept introduced or used in: {paper.title}",
+                    concept_type=ctype,
+                    summary=csummary or f"A concept from: {paper.title}",
+                    explanation=cexplanation,
+                    definition=cdefinition,
                 )
                 db.add(concept_node)
                 db.flush()  # get the id without full commit

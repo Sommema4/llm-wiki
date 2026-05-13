@@ -26,6 +26,9 @@ class PaperBase(BaseModel):
 class ConceptBase(BaseModel):
     id: str
     name: str
+    concept_type: Optional[str] = None
+    summary: Optional[str] = None
+    explanation: Optional[str] = None
     definition: str
     created_at: datetime
     updated_at: datetime

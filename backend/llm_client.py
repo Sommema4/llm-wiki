@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 from typing import Any, Dict, List, Optional
@@ -8,6 +9,10 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 from config import get_settings
 
 settings = get_settings()
+
+# Limit concurrent outgoing LLM requests so we never exceed provider
+# parallel-request quotas (e.g. MetaCentrum allows 4; we stay at 3).
+_llm_semaphore = asyncio.Semaphore(3)
 
 
 def _get_client(api_key: Optional[str] = None, base_url: Optional[str] = None) -> AsyncOpenAI:
@@ -33,7 +38,10 @@ def _get_client(api_key: Optional[str] = None, base_url: Optional[str] = None) -
 class _ConceptExtract(BaseModel):
     model_config = ConfigDict(extra="ignore")
     name: str
-    definition: str
+    concept_type: str = "METHOD"  # PROBLEM|CONTRIBUTION|METHOD|MODEL|DATASET|RESULT|METRIC|LIMITATION
+    summary: str = ""             # L0: one sentence — what it is
+    explanation: str = ""         # L1: 2-3 sentences — how it works and why it matters
+    definition: str = ""          # L2: technical detail, equations, paper-specific usage
 
 
 class _RelationToExisting(BaseModel):
@@ -73,9 +81,11 @@ class _PaperExtract(BaseModel):
         return v or []
 
 
-class _UpdatedDefinition(BaseModel):
+class _UpdatedConcept(BaseModel):
     model_config = ConfigDict(extra="ignore")
-    updated_definition: str
+    summary: str
+    explanation: str
+    definition: str
 
 
 class _MergeDecision(BaseModel):
@@ -155,7 +165,7 @@ async def extract_paper_metadata(
     client = _get_client(api_key, base_url)
     concept_list = ", ".join(existing_concepts[:500]) if existing_concepts else "none yet"
 
-    prompt = f"""You are analyzing a scientific paper and building a comprehensive knowledge base from it. Extract structured information and return it as valid JSON.
+    prompt = f"""You are analyzing a scientific paper to build a semantic knowledge graph. Extract typed concept nodes that have standalone semantic value.
 
 Paper text (may be truncated):
 {text[:400000]}
@@ -172,35 +182,47 @@ Return a JSON object with EXACTLY this structure:
   "contributions": ["specific contribution 1", "specific contribution 2"],
   "key_findings": ["precise quantitative or qualitative finding 1", "finding 2"],
   "concepts_used": [
-    {{"name": "concept name in lowercase", "definition": "4-6 sentence definition covering: what the concept is, the formal or mathematical formulation where applicable, how it works mechanically step by step, why it matters, and how this paper specifically uses or extends it"}}
+    {{
+      "name": "concept name in lowercase",
+      "concept_type": "METHOD",
+      "summary": "one sentence — what this concept is",
+      "explanation": "2-3 sentences — how it works and why it matters",
+      "definition": "technical detail: formal definition, mathematical formulation where applicable, how this paper specifically uses or extends it"
+    }}
   ],
   "relations_to_existing": [
     {{"concept": "existing concept name", "relation": "extends|uses|contradicts|improves|applies", "description": "how this paper relates"}}
   ]
 }}
 
-Rules for concepts_used — extract 100-200 concepts, spanning ALL of these categories where they appear in the paper:
-- Core methods and algorithms proposed (be specific: not just "attention" but "multi-head self-attention", "cross-attention decoder")
-- Mathematical formulations, loss functions, objective functions, regularizers
-- Architectural components and modules (layers, blocks, heads, encoders, decoders)
-- Training procedures, optimization techniques, learning rate schedules
-- Evaluation metrics and benchmarks used
-- Datasets referenced
-- Theoretical concepts, assumptions, and problem formulations
-- Baseline methods compared against
-- Key hyperparameters or design choices that are central to the paper's claims
-- Background concepts the paper builds on (cited foundational ideas)
+Concept types and their meaning:
+- PROBLEM: the research problem or challenge this paper addresses (1-3 total)
+- CONTRIBUTION: novel ideas, techniques, or findings specific to this paper (1-5 total)
+- METHOD: algorithms, procedures, or techniques central to the paper's approach (1-8 total)
+- MODEL: specific model architectures, variants, or systems (1-4 total)
+- DATASET: datasets used for training or evaluation (1-6 total)
+- RESULT: key quantitative or qualitative findings worth referencing independently (1-5 total)
+- METRIC: evaluation metrics — only if non-standard or specially defined (1-4 total)
+- LIMITATION: stated limitations, failure modes, or open questions (1-3 total)
 
-Do NOT conflate related but distinct concepts — give each a separate entry.
-- relations_to_existing: only concepts that appear in the knowledge base list above
+Anti-fragmentation rules — DO NOT extract a concept if:
+- It is standard domain knowledge any expert would know (e.g. "gradient descent", "relu activation")
+- It is mentioned only once without meaningful discussion
+- It is a minor implementation detail (specific hyperparameter value, line of code)
+- It is an elaboration of another concept already in your list
+- It cannot be independently referenced or reused across different papers
+
+A concept earns its place only if a researcher would plausibly search for it by name.
+- relations_to_existing: only for concepts already in the knowledge base list above
 - Return ONLY the JSON object, no other text"""
 
-    response = await client.chat.completions.create(
-        model=model or settings.default_model,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=60000,
-        temperature=0.1,
-    )
+    async with _llm_semaphore:
+        response = await client.chat.completions.create(
+            model=model or settings.default_model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=30000,
+            temperature=0.1,
+        )
     return _validate(response.choices[0].message.content, _PaperExtract).model_dump()
 
 
@@ -212,11 +234,11 @@ async def enrich_concept_definition(
     api_key: Optional[str] = None,
     base_url: Optional[str] = None,
     model: Optional[str] = None,
-) -> str:
-    """Update a concept's definition with insights from a new paper."""
+) -> Dict[str, str]:
+    """Update a concept's multi-resolution descriptions with insights from a new paper."""
     client = _get_client(api_key, base_url)
 
-    prompt = f"""Update the definition of a scientific concept using new information from a paper.
+    prompt = f"""Update the descriptions of a scientific concept using new information from a paper.
 
 Concept: "{concept_name}"
 Current definition: {current_definition}
@@ -224,15 +246,22 @@ Current definition: {current_definition}
 New context from "{paper_title}":
 {context_excerpt[:4000]}
 
-Return JSON: {{"updated_definition": "comprehensive 5-8 sentence definition that: (1) explains what the concept is, (2) describes how it works mechanically, (3) explains why it matters, (4) notes any variations or nuances, and (5) incorporates the new information from this paper"}}"""
+Return JSON with three levels of description:
+{{
+  "summary": "one sentence — what this concept is",
+  "explanation": "2-3 sentences — how it works and why it matters",
+  "definition": "technical detail: formal definition, mathematical formulation where applicable, and how this paper uses or extends the concept"
+}}"""
 
-    response = await client.chat.completions.create(
-        model=model or settings.default_model,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=1536,
-        temperature=0.1,
-    )
-    return _validate(response.choices[0].message.content, _UpdatedDefinition).updated_definition
+    async with _llm_semaphore:
+        response = await client.chat.completions.create(
+            model=model or settings.default_model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1024,
+            temperature=0.1,
+        )
+    result = _validate(response.choices[0].message.content, _UpdatedConcept)
+    return {"summary": result.summary, "explanation": result.explanation, "definition": result.definition}
 
 
 async def confirm_concept_merge(
@@ -257,12 +286,13 @@ Return JSON:
   "merged_definition": "combined definition (only if merging)"
 }}"""
 
-    response = await client.chat.completions.create(
-        model=model or settings.default_model,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=256,
-        temperature=0.1,
-    )
+    async with _llm_semaphore:
+        response = await client.chat.completions.create(
+            model=model or settings.default_model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=256,
+            temperature=0.1,
+        )
     decision = _validate(response.choices[0].message.content, _MergeDecision)
     if decision.should_merge:
         return {
@@ -294,12 +324,13 @@ Return JSON:
   "description": "one sentence explanation (only if related)"
 }}"""
 
-    response = await client.chat.completions.create(
-        model=model or settings.default_model,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=256,
-        temperature=0.1,
-    )
+    async with _llm_semaphore:
+        response = await client.chat.completions.create(
+            model=model or settings.default_model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=256,
+            temperature=0.1,
+        )
     check = _validate(response.choices[0].message.content, _RelationCheck)
     if check.related:
         return {
@@ -336,12 +367,13 @@ Return JSON:
   ]
 }}"""
 
-    response = await client.chat.completions.create(
-        model=model or settings.default_model,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=1024,
-        temperature=0.1,
-    )
+    async with _llm_semaphore:
+        response = await client.chat.completions.create(
+            model=model or settings.default_model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1024,
+            temperature=0.1,
+        )
     batch = _validate(response.choices[0].message.content, _ScoreBatch)
     return [s.model_dump() for s in batch.scores]
 
@@ -378,9 +410,10 @@ Knowledge base context:
     # Current question
     messages.append({"role": "user", "content": question})
 
-    response = await client.chat.completions.create(
-        model=model or settings.chat_model,
-        messages=messages,
-        temperature=0.3,
-    )
+    async with _llm_semaphore:
+        response = await client.chat.completions.create(
+            model=model or settings.chat_model,
+            messages=messages,
+            temperature=0.3,
+        )
     return response.choices[0].message.content

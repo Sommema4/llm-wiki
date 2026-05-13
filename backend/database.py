@@ -77,7 +77,10 @@ class Concept(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     kb_id = Column(String, ForeignKey("knowledge_bases.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String, nullable=False)
-    definition = Column(Text)
+    concept_type = Column(String, nullable=True)   # PROBLEM|CONTRIBUTION|METHOD|MODEL|DATASET|RESULT|METRIC|LIMITATION
+    summary = Column(Text, nullable=True)           # L0: one sentence
+    explanation = Column(Text, nullable=True)       # L1: 2-3 sentences
+    definition = Column(Text)                       # L2: technical / formal detail
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(
         DateTime,
@@ -136,6 +139,14 @@ def init_db() -> None:
             conn.execute(text("ALTER TABLE users ADD COLUMN metacentrum_api_key TEXT"))
         if "llm_provider" not in users_cols:
             conn.execute(text("ALTER TABLE users ADD COLUMN llm_provider TEXT DEFAULT 'openrouter'"))
+
+        concepts_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(concepts)")).fetchall()}
+        if "concept_type" not in concepts_cols:
+            conn.execute(text("ALTER TABLE concepts ADD COLUMN concept_type TEXT"))
+        if "summary" not in concepts_cols:
+            conn.execute(text("ALTER TABLE concepts ADD COLUMN summary TEXT"))
+        if "explanation" not in concepts_cols:
+            conn.execute(text("ALTER TABLE concepts ADD COLUMN explanation TEXT"))
 
         conn.commit()
 
