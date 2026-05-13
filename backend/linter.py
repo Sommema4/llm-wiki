@@ -50,7 +50,7 @@ def compute_clusters(G: nx.Graph) -> List[List[str]]:
 
 # ── Lint pipeline ──────────────────────────────────────────────────────────────
 
-async def run_lint(report_id: str, kb_id: str, api_key: str | None = None) -> None:
+async def run_lint(report_id: str, kb_id: str, api_key: str | None = None, base_url: str | None = None, default_model: str | None = None, chat_model: str | None = None) -> None:
     """
     Full lint pipeline. Called as a FastAPI BackgroundTask.
 
@@ -89,6 +89,8 @@ async def run_lint(report_id: str, kb_id: str, api_key: str | None = None) -> No
                 {"name": ca.name, "definition": ca.definition},
                 {"name": cb.name, "definition": cb.definition},
                 api_key=api_key,
+                base_url=base_url,
+                model=default_model,
             )
 
             if merge_result:
@@ -172,6 +174,8 @@ async def run_lint(report_id: str, kb_id: str, api_key: str | None = None) -> No
                         {"name": ca.name, "definition": ca.definition},
                         {"name": cb.name, "definition": cb.definition},
                         api_key=api_key,
+                        base_url=base_url,
+                        model=default_model,
                     )
 
                     if relation:
@@ -210,7 +214,7 @@ async def run_lint(report_id: str, kb_id: str, api_key: str | None = None) -> No
             batch = all_concepts[i : i + batch_size]
             batch_data = [{"name": c.name, "definition": c.definition} for c in batch]
             try:
-                scores = await score_concept_quality(batch_data, api_key=api_key)
+                scores = await score_concept_quality(batch_data, api_key=api_key, base_url=base_url, model=default_model)
                 for item in scores:
                     if item.get("score", 1.0) < 0.6:
                         concept = next(

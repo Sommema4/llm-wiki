@@ -4,7 +4,7 @@ from typing import List
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from auth import get_current_user
+from auth import get_current_user, get_user_llm_creds
 from database import KnowledgeBase, LintReport, User, get_db
 from linter import run_lint
 from schemas import LintReportResponse
@@ -35,7 +35,7 @@ async def start_lint(
     db.commit()
     db.refresh(report)
 
-    background_tasks.add_task(run_lint, report_id, kb_id, current_user.openrouter_api_key)
+    background_tasks.add_task(run_lint, report_id, kb_id, *get_user_llm_creds(current_user))
 
     return report
 

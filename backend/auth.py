@@ -3,7 +3,7 @@ Auth utilities: password hashing (bcrypt) and JWT creation/validation.
 """
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Tuple
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -70,3 +70,13 @@ def get_current_user(
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found.")
     return user
+
+
+def get_user_llm_creds(user: User) -> Tuple[Optional[str], Optional[str], str, str]:
+    """Return (api_key, base_url, default_model, chat_model) for the user's chosen provider."""
+    from config import get_settings
+    s = get_settings()
+    provider = getattr(user, "llm_provider", None) or "openrouter"
+    if provider == "metacentrum":
+        return user.metacentrum_api_key, s.metacentrum_base_url, s.metacentrum_default_model, s.metacentrum_chat_model
+    return user.openrouter_api_key, None, s.default_model, s.chat_model

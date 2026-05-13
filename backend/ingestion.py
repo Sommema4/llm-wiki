@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
-async def ingest_paper(paper_id: str, file_path: str, kb_id: str, api_key: str | None = None) -> None:
+async def ingest_paper(paper_id: str, file_path: str, kb_id: str, api_key: str | None = None, base_url: str | None = None, default_model: str | None = None, chat_model: str | None = None) -> None:
     """
     Full ingestion pipeline for one paper.
     Runs as a FastAPI BackgroundTask — creates its own DB session.
@@ -49,7 +49,7 @@ async def ingest_paper(paper_id: str, file_path: str, kb_id: str, api_key: str |
         concept_name_map: dict[str, Concept] = {c.name.lower(): c for c in existing_concepts}
 
         logger.info("[%s] Calling LLM for metadata extraction …", paper_id)
-        metadata = await extract_paper_metadata(text, list(concept_name_map.keys()), api_key=api_key)
+        metadata = await extract_paper_metadata(text, list(concept_name_map.keys()), api_key=api_key, base_url=base_url, model=default_model)
 
         # ── 3. Persist paper ─────────────────────────────────────────────────
         paper.title = metadata.get("title") or "Unknown Title"
@@ -81,6 +81,8 @@ async def ingest_paper(paper_id: str, file_path: str, kb_id: str, api_key: str |
                         paper.title,
                         text[:8000],
                         api_key=api_key,
+                        base_url=base_url,
+                        model=default_model,
                     )
                     existing.definition = enriched
                     existing.updated_at = datetime.datetime.utcnow()

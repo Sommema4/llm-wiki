@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from auth import get_current_user
+from auth import get_current_user, get_user_llm_creds
 from database import Concept, KnowledgeBase, Paper, User, get_db
 from embeddings import semantic_search
 from llm_client import answer_question
@@ -135,9 +135,10 @@ async def query_wiki(
 
     # Keep last 6 turns (3 exchanges) to stay within context budget
     trimmed_history = [{"role": t.role, "content": t.content} for t in (body.history or [])][-6:]
+    api_key, base_url, _default_model, chat_model = get_user_llm_creds(current_user)
 
     try:
-        answer = await answer_question(question, context_nodes, history=trimmed_history, api_key=current_user.openrouter_api_key)
+        answer = await answer_question(question, context_nodes, history=trimmed_history, api_key=api_key, base_url=base_url, model=chat_model)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 

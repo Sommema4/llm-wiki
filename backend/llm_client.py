@@ -10,16 +10,16 @@ from config import get_settings
 settings = get_settings()
 
 
-def _get_client(api_key: Optional[str] = None) -> AsyncOpenAI:
+def _get_client(api_key: Optional[str] = None, base_url: Optional[str] = None) -> AsyncOpenAI:
     resolved_key = api_key or settings.openrouter_api_key
     if not resolved_key:
         raise ValueError(
-            "No OpenRouter API key available. Set your key via the API Key button in the app, "
+            "No API key available. Set your key via the API Key button in the app, "
             "or ask the server administrator to set OPENROUTER_API_KEY in .env."
         )
     return AsyncOpenAI(
         api_key=resolved_key,
-        base_url=settings.openrouter_base_url,
+        base_url=base_url or settings.openrouter_base_url,
         max_retries=6,  # exponential backoff: ~1s, 2s, 4s, 8s, 16s, 32s
         default_headers={
             "HTTP-Referer": "http://localhost",
@@ -148,9 +148,11 @@ async def extract_paper_metadata(
     text: str,
     existing_concepts: List[str],
     api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+    model: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Single LLM call that extracts all structured metadata from a paper."""
-    client = _get_client(api_key)
+    client = _get_client(api_key, base_url)
     concept_list = ", ".join(existing_concepts[:500]) if existing_concepts else "none yet"
 
     prompt = f"""You are analyzing a scientific paper and building a comprehensive knowledge base from it. Extract structured information and return it as valid JSON.
@@ -194,7 +196,7 @@ Do NOT conflate related but distinct concepts — give each a separate entry.
 - Return ONLY the JSON object, no other text"""
 
     response = await client.chat.completions.create(
-        model=settings.default_model,
+        model=model or settings.default_model,
         messages=[{"role": "user", "content": prompt}],
         max_tokens=60000,
         temperature=0.1,
@@ -208,9 +210,11 @@ async def enrich_concept_definition(
     paper_title: str,
     context_excerpt: str,
     api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+    model: Optional[str] = None,
 ) -> str:
     """Update a concept's definition with insights from a new paper."""
-    client = _get_client(api_key)
+    client = _get_client(api_key, base_url)
 
     prompt = f"""Update the definition of a scientific concept using new information from a paper.
 
@@ -223,7 +227,7 @@ New context from "{paper_title}":
 Return JSON: {{"updated_definition": "comprehensive 5-8 sentence definition that: (1) explains what the concept is, (2) describes how it works mechanically, (3) explains why it matters, (4) notes any variations or nuances, and (5) incorporates the new information from this paper"}}"""
 
     response = await client.chat.completions.create(
-        model=settings.default_model,
+        model=model or settings.default_model,
         messages=[{"role": "user", "content": prompt}],
         max_tokens=1536,
         temperature=0.1,
@@ -235,9 +239,11 @@ async def confirm_concept_merge(
     concept_a: Dict[str, str],
     concept_b: Dict[str, str],
     api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+    model: Optional[str] = None,
 ) -> Optional[Dict[str, str]]:
     """Check if two similar-sounding concepts should be merged into one."""
-    client = _get_client(api_key)
+    client = _get_client(api_key, base_url)
 
     prompt = f"""Should these two concept entries be merged into one?
 
@@ -252,7 +258,7 @@ Return JSON:
 }}"""
 
     response = await client.chat.completions.create(
-        model=settings.default_model,
+        model=model or settings.default_model,
         messages=[{"role": "user", "content": prompt}],
         max_tokens=256,
         temperature=0.1,
@@ -270,9 +276,11 @@ async def check_concept_relation(
     concept_a: Dict[str, str],
     concept_b: Dict[str, str],
     api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+    model: Optional[str] = None,
 ) -> Optional[Dict[str, str]]:
     """Check if two unconnected concepts have a meaningful relation."""
-    client = _get_client(api_key)
+    client = _get_client(api_key, base_url)
 
     prompt = f"""Are these two scientific concepts meaningfully related?
 
@@ -287,7 +295,7 @@ Return JSON:
 }}"""
 
     response = await client.chat.completions.create(
-        model=settings.default_model,
+        model=model or settings.default_model,
         messages=[{"role": "user", "content": prompt}],
         max_tokens=256,
         temperature=0.1,
@@ -304,9 +312,11 @@ Return JSON:
 async def score_concept_quality(
     concepts: List[Dict[str, str]],
     api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+    model: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Score a batch of concept definitions for quality (completeness, clarity)."""
-    client = _get_client(api_key)
+    client = _get_client(api_key, base_url)
     concept_list = "\n".join(
         [f'- "{c["name"]}": {c["definition"]}' for c in concepts]
     )
@@ -327,7 +337,7 @@ Return JSON:
 }}"""
 
     response = await client.chat.completions.create(
-        model=settings.default_model,
+        model=model or settings.default_model,
         messages=[{"role": "user", "content": prompt}],
         max_tokens=1024,
         temperature=0.1,
@@ -341,9 +351,11 @@ async def answer_question(
     context_nodes: List[Dict[str, Any]],
     history: Optional[List[Dict[str, str]]] = None,
     api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+    model: Optional[str] = None,
 ) -> str:
     """Generate a grounded answer from retrieved wiki nodes, with optional conversation history."""
-    client = _get_client(api_key)
+    client = _get_client(api_key, base_url)
 
     context = "\n\n".join(
         f"[{node['type'].upper()}: {node['name']}]\n{node['content']}"
@@ -367,7 +379,7 @@ Knowledge base context:
     messages.append({"role": "user", "content": question})
 
     response = await client.chat.completions.create(
-        model=settings.chat_model,
+        model=model or settings.chat_model,
         messages=messages,
         temperature=0.3,
     )

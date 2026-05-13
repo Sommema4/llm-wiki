@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
-from auth import get_current_user
+from auth import get_current_user, get_user_llm_creds
 from database import Edge, KnowledgeBase, NodeEmbedding, Paper, User, get_db
 from ingestion import ingest_paper
 from schemas import PaperBase
@@ -50,7 +50,7 @@ async def upload_paper(
     db.commit()
     db.refresh(paper)
 
-    background_tasks.add_task(ingest_paper, paper_id, file_path, kb_id, current_user.openrouter_api_key)
+    background_tasks.add_task(ingest_paper, paper_id, file_path, kb_id, *get_user_llm_creds(current_user))
 
     return paper
 
@@ -123,5 +123,5 @@ async def reingest_paper(
     db.commit()
     db.refresh(paper)
 
-    background_tasks.add_task(ingest_paper, paper_id, paper.file_path, kb_id, current_user.openrouter_api_key)
+    background_tasks.add_task(ingest_paper, paper_id, paper.file_path, kb_id, *get_user_llm_creds(current_user))
     return paper

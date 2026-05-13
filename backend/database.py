@@ -30,6 +30,8 @@ class User(Base):
     username = Column(String, unique=True, nullable=False, index=True)
     hashed_password = Column(String, nullable=False)
     openrouter_api_key = Column(String, nullable=True)
+    metacentrum_api_key = Column(String, nullable=True)
+    llm_provider = Column(String, nullable=False, default="openrouter")
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 
@@ -130,6 +132,10 @@ def init_db() -> None:
         users_cols = {row[1] for row in conn.execute(text("PRAGMA table_info(users)")).fetchall()}
         if "openrouter_api_key" not in users_cols:
             conn.execute(text("ALTER TABLE users ADD COLUMN openrouter_api_key TEXT"))
+        if "metacentrum_api_key" not in users_cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN metacentrum_api_key TEXT"))
+        if "llm_provider" not in users_cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN llm_provider TEXT DEFAULT 'openrouter'"))
 
         conn.commit()
 

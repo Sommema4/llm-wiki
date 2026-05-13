@@ -13,6 +13,8 @@ class RegisterRequest(BaseModel):
     username: str
     password: str
     openrouter_api_key: str = ""
+    metacentrum_api_key: str = ""
+    llm_provider: str = "openrouter"
 
     @field_validator("username")
     @classmethod
@@ -50,6 +52,8 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
         username=body.username,
         hashed_password=hash_password(body.password),
         openrouter_api_key=body.openrouter_api_key.strip() or None,
+        metacentrum_api_key=body.metacentrum_api_key.strip() or None,
+        llm_provider=body.llm_provider if body.llm_provider in ("openrouter", "metacentrum") else "openrouter",
     )
     db.add(user)
     db.commit()
@@ -85,12 +89,17 @@ def me(current_user: User = Depends(get_current_user)):
     return {
         "ok": True,
         "username": current_user.username,
-        "has_api_key": bool(current_user.openrouter_api_key),
+        "has_openrouter_key": bool(current_user.openrouter_api_key),
+        "has_metacentrum_key": bool(current_user.metacentrum_api_key),
+        "has_api_key": bool(current_user.openrouter_api_key or current_user.metacentrum_api_key),
+        "llm_provider": getattr(current_user, "llm_provider", None) or "openrouter",
     }
 
 
 class UpdateApiKeyRequest(BaseModel):
-    openrouter_api_key: str
+    llm_provider: str
+    openrouter_api_key: str = ""
+    metacentrum_api_key: str = ""
 
 
 @router.put("/api-key", status_code=200)
@@ -99,7 +108,12 @@ def update_api_key(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Store or update the user's personal OpenRouter API key."""
-    current_user.openrouter_api_key = body.openrouter_api_key.strip() or None
+    """Store or update the user's LLM provider and API keys."""
+    if body.llm_provider in ("openrouter", "metacentrum"):
+        current_user.llm_provider = body.llm_provider
+    current_user.openrouter_api_key = body.openrouter_api_key.strip() or current_user.openrouter_api_key
+    current_user.metacentrum_api_key = body.metacentrum_api_key.strip() or current_user.metacentrum_api_key
     db.commit()
-    return {"ok": True, "has_api_key": bool(current_user.openrouter_api_key)}
+    provider = getattr(current_user, "llm_provider", None) or "openrouter"
+    has_key = bool(current_user.openrouter_api_key if provider == "openrouter" else current_user.metacentrum_api_key)
+    return {"ok": True, "has_api_key": has_key, "llm_provider": provider}

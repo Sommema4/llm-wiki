@@ -522,14 +522,46 @@
 
 <!-- API key settings overlay -->
 <div id="apikey-overlay" class="overlay" style="display:none">
-  <div class="overlay-box" style="width:400px">
-    <h2>OpenRouter API Key</h2>
-    <p style="color:var(--muted);font-size:0.82rem;margin-bottom:12px">Your key is used for all LLM calls (ingestion, chat). It is stored on the server tied to your account and never shared.</p>
+  <div class="overlay-box" style="width:460px">
+    <h2>LLM Provider &amp; API Keys</h2>
+    <p style="color:var(--muted);font-size:0.82rem;margin-bottom:16px">Keys are stored on the server tied to your account. You can save keys for both providers and switch between them at any time.</p>
     <form id="apikey-form">
+
+      <!-- Active provider toggle -->
       <div class="form-group">
-        <label>API Key</label>
-        <input id="apikey-input" type="password" placeholder="sk-or-v1-..." autocomplete="off" />
+        <label>Active provider</label>
+        <div style="display:flex;gap:8px">
+          <label id="or-radio-label" style="flex:1;display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:border-color 0.15s">
+            <input type="radio" name="apikey-provider" id="apikey-provider-or" value="openrouter" style="accent-color:var(--accent)" />
+            <span style="font-size:0.85rem">OpenRouter</span>
+          </label>
+          <label id="mc-radio-label" style="flex:1;display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:border-color 0.15s">
+            <input type="radio" name="apikey-provider" id="apikey-provider-mc" value="metacentrum" style="accent-color:var(--accent)" />
+            <span style="font-size:0.85rem">MetaCentrum</span>
+          </label>
+        </div>
       </div>
+
+      <!-- OpenRouter key -->
+      <div class="form-group">
+        <label style="display:flex;align-items:center;justify-content:space-between">
+          OpenRouter API Key
+          <span id="or-saved-badge" style="font-size:0.7rem;padding:1px 7px;border-radius:10px;display:none;background:#1a2e22;color:var(--success);border:1px solid #2a4a32">saved</span>
+        </label>
+        <input id="apikey-openrouter" type="password" placeholder="sk-or-v1-..." autocomplete="off" />
+        <p style="color:var(--muted);font-size:0.72rem;margin-top:3px">Get yours free at <a href="https://openrouter.ai/settings/keys" target="_blank" style="color:var(--accent)">openrouter.ai</a>. Leave blank to keep existing.</p>
+      </div>
+
+      <!-- MetaCentrum key -->
+      <div class="form-group">
+        <label style="display:flex;align-items:center;justify-content:space-between">
+          MetaCentrum API Key
+          <span id="mc-saved-badge" style="font-size:0.7rem;padding:1px 7px;border-radius:10px;display:none;background:#1a2e22;color:var(--success);border:1px solid #2a4a32">saved</span>
+        </label>
+        <input id="apikey-metacentrum" type="password" placeholder="Open WebUI → Settings → Account → API Keys" autocomplete="off" />
+        <p style="color:var(--muted);font-size:0.72rem;margin-top:3px">Endpoint: llm.ai.e-infra.cz &mdash; requires a MetaCentrum account. Leave blank to keep existing.</p>
+      </div>
+
       <div class="overlay-error" id="apikey-error"></div>
       <div style="display:flex;gap:8px;margin-top:4px">
         <button type="submit" class="btn-primary" style="flex:1">Save</button>
@@ -568,7 +600,7 @@
     <span id="header-username" style="font-size:0.78rem;color:var(--muted)"></span>
     <button id="lint-btn">Run Lint</button>
     <span id="lint-status"></span>
-    <button id="apikey-btn" title="Update OpenRouter API key" onclick="document.getElementById('apikey-overlay').style.display='flex'" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:0.78rem">API Key</button>
+    <button id="apikey-btn" title="Update LLM provider / API key" onclick="openApikeyOverlay()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:0.78rem">API Key</button>
     <button onclick="logout()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:0.78rem">Sign out</button>
   </div>
 </header>
@@ -634,6 +666,7 @@
 <script>
 const API = "http://localhost:8000";
 const pollingIntervals = {};
+let meData = null;
 
 // â”€â”€ Auth state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let authToken    = localStorage.getItem("llmwiki_token")    || null;
@@ -912,6 +945,10 @@ async function deletePaper(paperId) {
   try {
     await apiFetch(`/kbs/${activeKbId}/papers/${paperId}`, { method: "DELETE" });
     document.getElementById(`paper-${paperId}`)?.remove();
+    if (pollingIntervals[paperId]) {
+      clearInterval(pollingIntervals[paperId]);
+      delete pollingIntervals[paperId];
+    }
   } catch(e) {
     alert("Delete failed: " + e.message);
   }
@@ -927,19 +964,57 @@ async function reingestPaper(paperId) {
   }
 }
 
+// Highlight active provider radio label
+function _updateProviderRadioStyle() {
+  const orSelected = document.getElementById("apikey-provider-or").checked;
+  document.getElementById("or-radio-label").style.borderColor = orSelected ? "var(--accent)" : "var(--border)";
+  document.getElementById("mc-radio-label").style.borderColor = orSelected ? "var(--border)" : "var(--accent)";
+}
+document.querySelectorAll('input[name="apikey-provider"]').forEach(r =>
+  r.addEventListener("change", _updateProviderRadioStyle)
+);
+
+function openApikeyOverlay() {
+  document.getElementById("apikey-overlay").style.display = "flex";
+  document.getElementById("apikey-error").textContent = "";
+  document.getElementById("apikey-openrouter").value = "";
+  document.getElementById("apikey-metacentrum").value = "";
+  // Pre-select active provider and show saved badges
+  const provider = (meData && meData.llm_provider) || "openrouter";
+  document.getElementById("apikey-provider-or").checked = provider === "openrouter";
+  document.getElementById("apikey-provider-mc").checked = provider === "metacentrum";
+  _updateProviderRadioStyle();
+  const orBadge = document.getElementById("or-saved-badge");
+  const mcBadge = document.getElementById("mc-saved-badge");
+  orBadge.style.display = (meData && meData.has_openrouter_key)  ? "inline" : "none";
+  mcBadge.style.display = (meData && meData.has_metacentrum_key) ? "inline" : "none";
+}
+
 document.getElementById("apikey-form").addEventListener("submit", async e => {
   e.preventDefault();
   const errEl = document.getElementById("apikey-error");
   errEl.textContent = "";
-  const key = document.getElementById("apikey-input").value.trim();
+  const provider = document.querySelector('input[name="apikey-provider"]:checked').value;
+  const payload = {
+    llm_provider: provider,
+    openrouter_api_key:  document.getElementById("apikey-openrouter").value.trim(),
+    metacentrum_api_key: document.getElementById("apikey-metacentrum").value.trim(),
+  };
   try {
-    await apiFetch("/auth/api-key", {
+    const res = await apiFetch("/auth/api-key", {
       method: "PUT",
-      body: JSON.stringify({ openrouter_api_key: key }),
+      body: JSON.stringify(payload),
     });
+    // Update cached meData
+    if (meData) {
+      meData.llm_provider = res.llm_provider;
+      if (payload.openrouter_api_key)  meData.has_openrouter_key  = true;
+      if (payload.metacentrum_api_key) meData.has_metacentrum_key = true;
+      meData.has_api_key = res.has_api_key;
+    }
     document.getElementById("apikey-overlay").style.display = "none";
-    document.getElementById("apikey-input").value = "";
-    document.getElementById("apikey-btn").style.color = key ? "var(--success)" : "var(--muted)";
+    document.getElementById("apikey-btn").style.color = res.has_api_key ? "var(--success)" : "#f59e0b";
+    document.getElementById("apikey-btn").title = `Active: ${res.llm_provider} — click to change`;
   } catch(err) {
     errEl.textContent = err.message;
   }
@@ -1270,7 +1345,6 @@ async function initApp() {
   if (!authToken) { showAuthScreen(); return; }
 
   // Verify token is still valid and get key status
-  let meData;
   try {
     meData = await apiFetch("/auth/me");
   } catch(e) {
@@ -1279,7 +1353,9 @@ async function initApp() {
   }
 
   document.getElementById("header-username").textContent = currentUsername || "";
+  const provider = meData.llm_provider || "openrouter";
   document.getElementById("apikey-btn").style.color = meData.has_api_key ? "var(--success)" : "#f59e0b";
+  document.getElementById("apikey-btn").title = `Active: ${provider} — click to change`;
 
   // If we have a saved KB, go straight to app; otherwise show KB selector
   if (activeKbId && activeKbName) {
